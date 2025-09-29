@@ -1,0 +1,49 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: onruf
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Backend deps
+        working-directory: admin-panel/backend
+        run: npm install
+      - name: Prisma generate
+        working-directory: admin-panel/backend
+        run: npx prisma generate
+      - name: Build backend
+        working-directory: admin-panel/backend
+        run: npm run build
+      - name: Seed + Test
+        working-directory: admin-panel/backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/onruf
+          JWT_SECRET: test-secret
+        run: |
+          npx prisma migrate deploy
+          node dist/common/seed.js || true
+          node --test dist/tests
+      - name: Frontend deps
+        working-directory: admin-panel/frontend
+        run: npm install
+      - name: Build frontend
+        working-directory: admin-panel/frontend
+        run: npm run build
